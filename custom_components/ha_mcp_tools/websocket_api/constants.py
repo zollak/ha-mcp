@@ -6,7 +6,7 @@ import re
 
 from homeassistant.generated.config_flows import FLOWS
 
-from .. import card_definitions, core_contract, helper_collections
+from .. import card_definitions, core_contract, entity_restore, helper_collections
 from ..const import MAX_OAUTH_CALLBACK_LENGTH, MAX_OAUTH_CALLBACKS
 from . import logbook as _logbook
 
@@ -191,6 +191,7 @@ CAPABILITIES: list[str] = [
     # settings panel offers the editor only when this is advertised.
     "oauth_callbacks",
     *helper_collections.CAPABILITIES,
+    *entity_restore.CAPABILITIES,
     core_contract.CAPABILITY,
     *card_definitions.CAPABILITIES,
 ]
@@ -261,19 +262,7 @@ CONFIG_SEARCH_TYPES = (
 # Collection ("storage collection") helpers — entities in the state machine.
 # Matched on entity_id / friendly_name AND the live state-attribute body (an
 # input_select's ``options``, an input_number's ``min``/``max``/``step``, …).
-COLLECTION_HELPER_DOMAINS = frozenset(
-    {
-        "input_boolean",
-        "input_number",
-        "input_text",
-        "input_select",
-        "input_datetime",
-        "input_button",
-        "counter",
-        "timer",
-        "schedule",
-    }
-)
+COLLECTION_HELPER_DOMAINS = frozenset(helper_collections.FRONTEND_HELPER_DOMAINS)
 # Core's generated FLOWS["helper"]: the default without the async pre-step, the
 # fallback when its loader read fails, and the split that decides whose options are
 # withheld (``custom_domains = flows - FLOW_HELPER_DOMAINS``). Indexed from
