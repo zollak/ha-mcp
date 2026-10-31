@@ -41,6 +41,11 @@ Full features and documentation: https://github.com/homeassistant-ai/ha-mcp
 
    ```
 
+   The app listens on every IPv4 and IPv6 address of the Home Assistant
+   host; IPv6 clients are accepted from the local network only (see
+   [`ipv6_allowed_networks`](#ipv6_allowed_networks)). For an IPv6 address,
+   put it in brackets: `http://[2001:db8::10]:9583/private_...`.
+
 5. **Configure your AI client** using one of the options below
 
 ---
@@ -491,6 +496,20 @@ redact_secrets: true
 redact_app_option_keys: backup_password,snapshot_password
 ```
 
+### ipv6_allowed_networks
+
+**Default:** `""`
+
+The app's port answers IPv6 clients from the local network only, the way IPv4 sits behind your router's NAT: loopback, link-local, unique local addresses (`fc00::/7`) and the networks the Home Assistant host is directly connected to. IPv6 clients from anywhere else get `403`, even if your router lets inbound IPv6 through. IPv4 is unaffected.
+
+List any other IPv6 networks that should reach the app, separated by commas or new lines. Adding `::/0` allows every IPv6 client, including from the internet if your router admits inbound IPv6. Requires app restart to take effect.
+
+**Example Configuration:**
+
+```yaml
+ipv6_allowed_networks: 2001:db8:5::/48
+```
+
 ### enable_security_policy_tool
 
 **Default:** `false`
@@ -829,8 +848,8 @@ The add-on provides 87+ MCP tools for controlling Home Assistant:
 
 ### Todo Lists
 - `ha_get_todo` — Get todo lists or items - list all todo lists or get items from a specific list.
-- `ha_remove_todo_item` — Remove an item from a Home Assistant todo list.
-- `ha_set_todo_item` — Create or update a todo item in Home Assistant.
+- `ha_remove_todo_item` — Remove items from a Home Assistant todo list.
+- `ha_set_todo_item` — Create, update or reorder a todo item in Home Assistant.
 
 ### Utilities
 - `ha_eval_template` — Execute a Jinja2 template render, or an automation condition check, in Home Assistant.
