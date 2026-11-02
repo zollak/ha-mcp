@@ -88,9 +88,10 @@ the info handshake carries no capability entry:
   ``hass.states.get(id)`` omits the live-state fields (friendly_name/state) rather
   than crashing.
 * ``ha_mcp_tools/dashboards`` — Lovelace dashboards read in-process, four modes.
-  ``list`` mirrors the ``lovelace/dashboards/list`` row shape (id/url_path/title/
-  icon/show_in_sidebar/require_admin) with an additive per-row ``mode`` so the
-  server can exclude YAML dashboards; ``get`` returns one dashboard's config body
+  ``list`` returns each dashboard's ``LovelaceConfig.config`` as Core's
+  ``lovelace/dashboards/list`` sends it, with an additive per-row ``mode`` so the
+  server can exclude YAML dashboards, and ``update_fields``, the keys Core's
+  dashboard update schema accepts (omitted when unreadable); ``get`` returns one dashboard's config body
   (``await store.async_load`` in the async prep) with a structured
   ``yaml_excluded`` status for YAML-mode dashboards (the server falls back to
   legacy for those — a YAML body may carry resolved ``!secret`` plaintext);
@@ -110,7 +111,15 @@ the info handshake carries no capability entry:
   config-reference validator consumes: ``{services: [{domain, services:{name:{}}}],
   entity_ids: [...]}``. The ``services`` shape is the REST ``/api/services`` list
   ``build_service_index`` reads (bodies are empty dicts — the index only reads
-  keys); ``entity_ids`` is every ``hass.states.async_all()`` id. Pure, no prep.
+  keys); ``entity_ids`` is every ``hass.states.async_all()`` id. With
+  ``include_targets`` (flag ``reference_data_targets``) it adds the device,
+  area, floor and label registry ids, for the validator's target checks. Pure,
+  no prep.
+* ``ha_mcp_tools/automation_config`` — Core's automation validator run on a
+  proposed config (``validate``: Core's ``validation_status`` and humanized
+  error), Core's trigger/condition descriptions (``describe``), and an
+  automation's registry row, validation repair issue and references
+  (``lookup``). See ``automation_config.py``.
 * ``ha_mcp_tools/logbook_events`` — Core's own logbook query run in-process:
   ``EventProcessor`` with the REST flags (``timestamp=False`` ISO ``when``,
   ``include_entity_name=True``) and the ``logbook/get_events`` filter set
@@ -312,6 +321,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from .. import (
+    automation_config,
     core_contract,
     dashboard_cards_ws,
     entity_restore,
@@ -489,6 +499,7 @@ def _command_specs() -> list[tuple[dict[Any, Any], Any, Any]]:
         *entity_restore.command_specs(vol, er),
         *core_contract.command_specs(vol),
         *todo_items.command_specs(vol),
+        *automation_config.command_specs(vol),
         *dashboard_cards_ws.command_specs(vol),
         *_oauth_callback_specs(),
     ]
