@@ -169,6 +169,13 @@ hidden-entity reference and which paths were omitted. It does not name the hidde
 entity (a hidden mapping key is reported as `<hidden key>`) or reveal the omitted
 values.
 
+`ha_get_skill_guide` and `ha_search_tools` are never scanned: they return
+bundled docs and tool schemas, whose examples can name an entity_id that is also
+hidden. The developer-mode `ha_dev_*` tools are not scanned either: developer
+mode is a development and testing override that can change settings and replace
+the running server, and its reads (a stored security-policy rule, for example)
+can return a hidden entity_id.
+
 One diagnostic path is deliberately outside that guarantee by default:
 `ha_report_issue` bypasses both scans while `restrict_report_issue` is false,
 even when visibility data is healthy, and its report may contain logs naming a
@@ -343,8 +350,9 @@ choice keep the webhook on in `none` mode with LAN binding.
 
 Discovery never publishes the webhook id, in any of the three modes. The entry
 serves protected-resource metadata only at
-`/.well-known/oauth-protected-resource/api/webhook/<id>` and its `/readonly`
-variant. Both require the caller to already hold the id, and the webhook's
+`/.well-known/oauth-protected-resource/api/webhook/<id>` and its endpoint-suffix
+variants (`/readonly`, `/catalog/full`, `/catalog/search`, and both catalogs
+after `/readonly`). All of them require the caller to already hold the id, and the webhook's
 401 challenge points to its matching document rather than a fixed, guessable
 path. Switching from `ha_auth` or
 `legacy` back to the secret-URL posture therefore does not promote a published
@@ -399,7 +407,8 @@ In the app's `ha_auth` mode the Home Assistant login is the credential, not
 the webhook URL. The URL without a Bearer gets a 401, and that 401 points at
 the RFC 9728 protected-resource document served under the webhook's own path
 (`/.well-known/oauth-protected-resource/api/webhook/<id>`). The dev flavor also
-serves its `/readonly` variant. These metadata paths require the caller to
+serves its endpoint-suffix variants (`/readonly`, `/catalog/<mode>` and
+`/readonly/catalog/<mode>`). These metadata paths require the caller to
 already hold the id. Discovery therefore never publishes the webhook id in
 any mode, which is what lets the default posture with OAuth disabled keep
 treating that URL as the sole credential.

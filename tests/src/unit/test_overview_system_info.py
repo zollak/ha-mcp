@@ -150,6 +150,19 @@ class TestHaGetOverviewFieldsProjection:
         return self.registered_tools["ha_get_overview"]
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", ["full", "search"])
+    async def test_tool_discovery_hint_follows_the_connection_catalog(
+        self, overview_tool, mode
+    ):
+        """Only a search connection is told to discover tools with
+        ha_search_tools; a full-catalog connection has no such tool."""
+        from ha_mcp.tool_catalog import catalog_endpoint
+
+        with catalog_endpoint(mode):
+            result = await overview_tool()
+        assert ("tool_discovery" in result) is (mode == "search")
+
+    @pytest.mark.asyncio
     async def test_fields_none_returns_full_response(self, overview_tool):
         """fields=None (default) returns the full response — no projection."""
         result = await overview_tool()
@@ -539,7 +552,7 @@ class TestHaGetOverviewSettingsUrl:
         """Sidecar URL file present → field appears verbatim in the result."""
         url = "http://127.0.0.1:8099/private_abc/settings"
         monkeypatch.setattr(
-            "ha_mcp.stdio_settings_sidecar.read_sidecar_url",
+            "ha_mcp.stdio_settings_sidecar.live_sidecar_url",
             lambda: url,
         )
         result = await overview_tool(detail_level="minimal")
@@ -556,7 +569,7 @@ class TestHaGetOverviewSettingsUrl:
         overview call is caught.
         """
         monkeypatch.setattr(
-            "ha_mcp.stdio_settings_sidecar.read_sidecar_url",
+            "ha_mcp.stdio_settings_sidecar.live_sidecar_url",
             lambda: None,
         )
         result = await overview_tool(detail_level="minimal")
@@ -578,7 +591,7 @@ class TestHaGetOverviewSettingsUrl:
         """
         url = "http://127.0.0.1:8099/private_abc/settings"
         monkeypatch.setattr(
-            "ha_mcp.stdio_settings_sidecar.read_sidecar_url",
+            "ha_mcp.stdio_settings_sidecar.live_sidecar_url",
             lambda: url,
         )
         result = await overview_tool(fields=["system_info"])
@@ -599,7 +612,7 @@ class TestHaGetOverviewSettingsUrl:
         references the mount path + startup logs rather than a guessed URL.
         """
         monkeypatch.setattr(
-            "ha_mcp.stdio_settings_sidecar.read_sidecar_url", lambda: None
+            "ha_mcp.stdio_settings_sidecar.live_sidecar_url", lambda: None
         )
         monkeypatch.setattr(
             "ha_mcp.settings_ui.get_http_settings_prefix", lambda: "/mcp"
@@ -615,7 +628,7 @@ class TestHaGetOverviewSettingsUrl:
         """No sidecar URL and no HTTP mount (stdio with the sidecar disabled)
         → neither settings field is emitted."""
         monkeypatch.setattr(
-            "ha_mcp.stdio_settings_sidecar.read_sidecar_url", lambda: None
+            "ha_mcp.stdio_settings_sidecar.live_sidecar_url", lambda: None
         )
         monkeypatch.setattr("ha_mcp.settings_ui.get_http_settings_prefix", lambda: None)
         result = await overview_tool(detail_level="minimal")
@@ -633,7 +646,7 @@ class TestHaGetOverviewSettingsUrl:
         monkeypatch.delenv("HA_MCP_EMBEDDED", raising=False)
         monkeypatch.delenv("SUPERVISOR_TOKEN", raising=False)
         monkeypatch.setattr(
-            "ha_mcp.stdio_settings_sidecar.read_sidecar_url", lambda: None
+            "ha_mcp.stdio_settings_sidecar.live_sidecar_url", lambda: None
         )
         monkeypatch.setattr(settings_ui, "_http_settings_prefix", None)
         monkeypatch.setattr(settings_ui, "_http_settings_mounted", False)
@@ -661,7 +674,7 @@ class TestHaGetOverviewSettingsUrl:
         prefix; the hint uses ``rstrip('/')`` to collapse it.
         """
         monkeypatch.setattr(
-            "ha_mcp.stdio_settings_sidecar.read_sidecar_url", lambda: None
+            "ha_mcp.stdio_settings_sidecar.live_sidecar_url", lambda: None
         )
         monkeypatch.setattr(
             "ha_mcp.settings_ui.get_http_settings_prefix", lambda: "/mcp/"
@@ -678,7 +691,7 @@ class TestHaGetOverviewSettingsUrl:
         """Like ``settings_url``, the HTTP hint is emitted post-projection so a
         narrow ``fields=`` request still surfaces it."""
         monkeypatch.setattr(
-            "ha_mcp.stdio_settings_sidecar.read_sidecar_url", lambda: None
+            "ha_mcp.stdio_settings_sidecar.live_sidecar_url", lambda: None
         )
         monkeypatch.setattr(
             "ha_mcp.settings_ui.get_http_settings_prefix", lambda: "/mcp"
@@ -734,10 +747,10 @@ class TestHaGetOverviewReadOnlyMode:
         from types import SimpleNamespace
 
         monkeypatch.setattr(
-            "ha_mcp.tools.tools_search.get_global_settings",
-            # ha_get_overview reads enable_tool_search from the same
-            # singleton before the read-only re-read — stub both.
-            lambda: SimpleNamespace(read_only_mode=on, enable_tool_search=False),
+            "ha_mcp.tool_catalog.get_global_settings",
+            # ha_get_overview reads the catalog mode before the read-only
+            # re-read — stub both.
+            lambda: SimpleNamespace(enable_tool_search=False),
         )
         monkeypatch.setattr(
             "ha_mcp.read_only.get_global_settings",
