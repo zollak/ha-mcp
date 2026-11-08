@@ -175,10 +175,24 @@ tests against them.
   — so it genuinely proves the call failed. Prefer also passing `expected_error` to pin
   *which* failure; about half the current call sites omit it and assert on the returned
   dict themselves instead, which is equally fine.
-- `safe_call_tool()` is for calls whose outcome the test does **not** assert: `finally`
-  cleanup (so a cleanup failure cannot mask the real assertion) and service-availability
-  probes. It swallows `ToolError` and returns a parsed dict, so using it for an expected
-  failure means nothing verifies the call failed at all.
+- `safe_call_tool()` is for calls whose outcome the test does **not** assert: removing
+  or aborting, in a `finally` block, something the test created or opened, and
+  service-availability probes. It swallows `ToolError` and returns a parsed dict, so using
+  it for an expected failure means nothing verifies the call failed at all.
+- A `finally` block that puts back state a later test on the worker reads runs its steps
+  in `CleanupSteps` (`src/e2e/utilities/cleanup.py`): one `with cleanup.step():` per
+  step. A tool call in a step goes through `MCPAssertions(client).call_tool_success()`;
+  a helper counts as checked when it raises on failure. Removing or aborting, in the same
+  block, something the test created or opened may stay on `safe_call_tool()`, in a step
+  of its own. A step that raises an `Exception` or calls `pytest.fail()` or
+  `pytest.skip()` is logged, and the next step runs. A failed step fails a test whose
+  body passed or was skipped; after a failed body it is only logged, so pytest reports
+  the body's own failure. Enter `CleanupSteps` as the first statement of the `finally`
+  block, and not in a `try`/`finally` that runs while another exception is handled (an
+  `except` in the `finally` block, a caller's `except`) or whose body raises an exception
+  the caller expects (`pytest.raises`): it would read that exception as a failed body and
+  only log a failed step. A restore that must never fail the test keeps its own
+  `try`/`except` and a comment saying why.
 
 ## E2E Test Patterns
 
@@ -192,7 +206,7 @@ await mcp.call_tool("ha_config_get_script", {"script_id": "nonexistent"})
 ```
 
 **Automation configs come back as Core stores them:** the automation tools send the config to Core as written and `ha_config_get_automation` returns Core's stored body verbatim, so `python_transform` operates on that body. Core itself renames the singular root keys `trigger`/`condition`/`action` to the plural forms and `service` to `action` while validating a write (Core's backward-compat validators: `cv.renamed` for the root keys, the service schema's own rename for `service`; both rename in place and the config view stores that dict), and refuses a config holding both forms of one key; a trigger's `platform` key is kept. So a config written with singular keys reads back plural, and `test_data_factory.automation_config`'s singular `trigger`/`action` defaults must be overridden with the same singular keys, never the plural ones.
-An automation the registry knows but Core's config API answers "Resource not found" for (defined in YAML or a package) is CONFIG_NOT_FOUND on get, set and remove. The component's lookup reports `loaded`; while Core has not loaded the automation, `references` is None and the get tool warns. With `reference_data_targets`, `reference_data` carries Core's match sentinels (`none`/`all`), which the reference validator skips; without the target ids it reports `validation.unchecked_target_kinds`.
+An automation the registry knows but Core's config API answers "Resource not found" for (defined in YAML or a package) is CONFIG_NOT_FOUND on get, set and remove. The component's lookup reports `loaded`; while Core has not loaded the automation, `references` is None and the get tool warns. The reference validator reads Core's verdict from the component's `config_references`; without the component it reports `validation.references_unchecked`.
 
 **Poll after creating entities.** After creating an entity (automation, script, helper, etc.), HA needs time to register it. Never search/query immediately — use polling helpers from `tests/src/e2e/utilities/wait_helpers.py`:
 ```python
