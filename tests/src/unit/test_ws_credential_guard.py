@@ -11,19 +11,69 @@ them before dispatch, as a policy refusal rather than an input error, while the
 available.
 """
 
+import json
+from collections.abc import Iterator
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.core import HomeAssistant
+from homeassistant.setup import async_setup_component
+from pytest_homeassistant.test_util.aiohttp import AiohttpClientMocker
 
 from ha_mcp._vendor.fastmcp.exceptions import ToolError
+from ha_mcp.client.rest_client import HomeAssistantClient
+from ha_mcp.tools.tools_service import ServiceTools
 from ha_mcp.tools.util_helpers import is_credential_ws_command
 
-from .test_call_service_snapshot_guard import _error, _make_bridge
-from .test_call_service_ws_command import _make_tools
+from ._client_spies import sent_messages
+from ._code_mode import run_custom_tool
+from ._supervisor_core import load_supervisor_api, supervisor_requests
 
 
 def _supervisor(endpoint: str, method: str = "post") -> dict[str, Any]:
     return {"endpoint": endpoint, "method": method}
+
+
+@pytest.fixture
+async def supervisor_calls(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> AiohttpClientMocker:
+    """Core answering ``auth/current_user``, and Core's own ``supervisor/api``
+    in front of a Supervisor answering ``/core/info`` (``_supervisor_core``)."""
+    assert await async_setup_component(hass, "auth", {})
+    load_supervisor_api(
+        hass,
+        aioclient_mock,
+        monkeypatch,
+        {
+            ("get", path): {"version": "2026.11.1"}
+            for path in ("/core/info", "/v2/core/info")
+        },
+    )
+    return aioclient_mock
+
+
+@pytest.fixture
+def sent(core_client: HomeAssistantClient) -> Iterator[AsyncMock]:
+    """A spy on the client's WebSocket send; Core still answers."""
+    with sent_messages(core_client) as spy:
+        yield spy
+
+
+def _tools(client: HomeAssistantClient) -> ServiceTools:
+    return ServiceTools(client, MagicMock())
+
+
+async def _sandbox_ws_send(
+    client: HomeAssistantClient,
+    monkeypatch: pytest.MonkeyPatch,
+    message: dict[str, Any],
+) -> Any:
+    """Send ``message`` with ``ws_send`` from custom-tool code; return its answer."""
+    return await run_custom_tool(client, monkeypatch, f"await ws_send({message!r})")
 
 
 @pytest.mark.parametrize(
@@ -85,19 +135,24 @@ def test_whoami_and_unrelated_commands_stay_usable(
     ],
 )
 async def test_call_service_cannot_mint_tokens_or_manage_users(
-    command: str, data: dict[str, Any] | None
+    core_client: HomeAssistantClient,
+    supervisor_calls: AiohttpClientMocker,
+    sent: AsyncMock,
+    command: str,
+    data: dict[str, Any] | None,
 ) -> None:
-    tools = _make_tools({"success": True, "result": "should-never-be-returned"})
+    tools = _tools(core_client)
 
     with pytest.raises(ToolError) as excinfo:
         await tools.ha_call_service(ws_command=command, data=data)
 
-    error = _error(excinfo)
+    error = json.loads(str(excinfo.value))["error"]
     assert "refused by policy" in error["message"]
     suggestions = " ".join(error["suggestions"])
     assert "Home Assistant UI" in suggestions
     assert "Check the parameter values" not in suggestions
-    tools._client.send_websocket_message.assert_not_awaited()
+    sent.assert_not_awaited()
+    assert supervisor_requests(supervisor_calls) == []
 
 
 @pytest.mark.parametrize(
@@ -108,15 +163,17 @@ async def test_call_service_cannot_mint_tokens_or_manage_users(
     ],
 )
 async def test_call_service_still_sends_whoami_and_other_supervisor_calls(
-    command: str, data: dict[str, Any] | None
+    core_client: HomeAssistantClient,
+    supervisor_calls: AiohttpClientMocker,
+    sent: AsyncMock,
+    command: str,
+    data: dict[str, Any] | None,
 ) -> None:
-    tools = _make_tools({"success": True, "result": {"id": "u1"}})
+    tools = _tools(core_client)
 
     result = await tools.ha_call_service(ws_command=command, data=data)
 
-    tools._client.send_websocket_message.assert_awaited_once_with(
-        {"type": command, **(data or {})}
-    )
+    sent.assert_awaited_once_with({"type": command, **(data or {})})
     assert result["success"] is True
 
 
@@ -145,14 +202,18 @@ async def test_call_service_still_sends_whoami_and_other_supervisor_calls(
     ],
 )
 async def test_sandbox_ws_send_cannot_mint_tokens_or_bypass_wrapping_tools(
-    message: dict[str, Any], expected: str
+    core_client: HomeAssistantClient,
+    supervisor_calls: AiohttpClientMocker,
+    sent: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+    message: dict[str, Any],
+    expected: str,
 ) -> None:
-    bridge = _make_bridge()
-
-    result = await bridge.ws_send(message)
+    result = await _sandbox_ws_send(core_client, monkeypatch, message)
 
     assert expected in result.get("error", "")
-    bridge.client.send_websocket_message.assert_not_awaited()
+    sent.assert_not_awaited()
+    assert supervisor_requests(supervisor_calls) == []
 
 
 @pytest.mark.parametrize(
@@ -163,10 +224,12 @@ async def test_sandbox_ws_send_cannot_mint_tokens_or_bypass_wrapping_tools(
     ],
 )
 async def test_sandbox_ws_send_still_sends_whoami_and_other_supervisor_calls(
+    core_client: HomeAssistantClient,
+    supervisor_calls: AiohttpClientMocker,
+    sent: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
     message: dict[str, Any],
 ) -> None:
-    bridge = _make_bridge()
+    await _sandbox_ws_send(core_client, monkeypatch, message)
 
-    await bridge.ws_send(message)
-
-    bridge.client.send_websocket_message.assert_awaited_once_with(message)
+    sent.assert_awaited_once_with(message)

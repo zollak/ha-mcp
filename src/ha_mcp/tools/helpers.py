@@ -5,7 +5,6 @@ Centralized utilities that can be shared across multiple tool implementations.
 """
 
 import functools
-import inspect
 import json
 import logging
 import re
@@ -119,7 +118,7 @@ def extract_tool_error_message(te: ToolError | str) -> str:
         error_data = json.loads(str(te))
         msg = error_data.get("error", {}).get("message", str(te))
         return str(msg)
-    except (json.JSONDecodeError, TypeError, AttributeError):
+    except json.JSONDecodeError, TypeError, AttributeError:
         return str(te)
 
 
@@ -137,7 +136,7 @@ def extract_structured_error_reason(exc: BaseException) -> str | None:
     """
     try:
         payload = json.loads(str(exc))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     if not isinstance(payload, dict):
         return None
@@ -816,32 +815,36 @@ def ws_failure_code(result: dict[str, Any]) -> ErrorCode:
     return ErrorCode.SERVICE_CALL_FAILED
 
 
+def core_error_message(error: object) -> str:
+    """Core's error text without the ``Command failed:`` prefix the WebSocket
+    client puts on a refused command (a result's ``error`` or the raised
+    ``HomeAssistantCommandError``)."""
+    return str(error).removeprefix("Command failed: ")
+
+
+def raise_core_refusal(
+    what: str,
+    result: dict[str, Any],
+    context: dict[str, Any] | None = None,
+    suggestions: list[str] | None = None,
+    suffix: str = "",
+) -> NoReturn:
+    """Raise a failed WebSocket command as ``{what}: <error>{suffix}``, the
+    error without the client's prefix, coded by :func:`ws_failure_code` with
+    Core's own code kept as ``ha_error_code``."""
+    raise_tool_error(
+        create_error_response(
+            ws_failure_code(result),
+            f"{what}: {core_error_message(result.get('error', 'Unknown error'))}{suffix}",
+            suggestions=suggestions,
+            context={**(context or {}), "ha_error_code": result.get("error_code")},
+        )
+    )
+
+
 def clear_or_keep(value: str | None, param_name: str) -> str | None:
     """``clearable_value`` for params where None means "not passed": blank → ''."""
     return None if value is None else clearable_value(value, param_name) or ""
-
-
-class _HiddenParam:
-    """Annotated marker for a parameter left out of the published input schema."""
-
-
-# Argument validation runs on the function signature, not the published schema,
-# so a hidden parameter is still accepted from callers that pass it.
-HIDDEN_PARAM = _HiddenParam()
-
-
-def hidden_param_names(fn: Any) -> frozenset[str]:
-    """Names of ``fn``'s parameters annotated with ``HIDDEN_PARAM``."""
-    try:
-        signature = inspect.signature(fn, eval_str=True)
-    except NameError:
-        # A string annotation naming a TYPE_CHECKING-only import can't resolve.
-        signature = inspect.signature(fn)
-    return frozenset(
-        name
-        for name, param in signature.parameters.items()
-        if HIDDEN_PARAM in getattr(param.annotation, "__metadata__", ())
-    )
 
 
 def register_tool_methods(mcp: Any, instance: Any) -> None:
@@ -849,18 +852,13 @@ def register_tool_methods(mcp: Any, instance: Any) -> None:
 
     Discovers methods bearing a ``__fastmcp__`` attribute (set by the outermost
     ``@tool`` decorator — must be listed above ``@log_tool_usage``) and registers
-    them via ``mcp.add_tool()``, dropping ``HIDDEN_PARAM`` parameters from the
-    published schema.
+    them via ``mcp.add_tool()``.
     """
     count = 0
     for attr in dir(instance):
         method = getattr(instance, attr)
         if callable(method) and hasattr(method, "__fastmcp__"):
-            registered = mcp.add_tool(method)
-            properties = getattr(registered, "parameters", {}).get("properties")
-            if isinstance(properties, dict):
-                for name in hidden_param_names(method):
-                    properties.pop(name, None)
+            mcp.add_tool(method)
             count += 1
     if count == 0:
         logger.warning(f"No @tool-decorated methods found on {type(instance).__name__}")

@@ -1961,7 +1961,7 @@ def get_backup_manager(client: Any, settings: Any) -> BackupManager:
     manager (and one set of per-entity locks). Rebuilds when the
     ``settings`` object identity differs from the cached manager's —
     runtime env-var changes that reset the global settings singleton
-    (see ``config._reset_global_settings``) yield a fresh ``settings``
+    (see ``config.reset_global_settings``) yield a fresh ``settings``
     instance, which forces a manager rebuild so new settings take effect.
     Active guards, capture locks and restore pins survive that replacement.
     """
@@ -1979,7 +1979,7 @@ def get_backup_manager(client: Any, settings: Any) -> BackupManager:
         register_default_handlers(mgr, client)
         try:
             client._auto_backup_manager = mgr
-        except (AttributeError, TypeError):
+        except AttributeError, TypeError:
             # Read-only client (e.g. a slotted mock) — manager still works,
             # just isn't cached.
             pass
@@ -2979,7 +2979,7 @@ async def _restore_flow_helper(
     none of its forms offers (fixed at creation, like a template's type) must
     still match the stored one, or the restore is refused unapplied.
     """
-    from .tools.config_entry_flow import update_config_entry_options
+    from .tools.config_entry_flow import restore_config_entry_options
 
     label = _flow_label(helper_type)
     snapshot = _flow_snapshot_for_restore(entity_id, config, helper_type)
@@ -3000,13 +3000,11 @@ async def _restore_flow_helper(
     return await _apply_and_verify(
         f"{label} helper",
         partial(
-            update_config_entry_options,
+            restore_config_entry_options,
             client,
             entry_id,
             options,
             expected_domain=helper_type,
-            noun="helper",
-            keep_current_values=False,
             fixed_options=current["options"],
         ),
         partial(
@@ -3109,28 +3107,11 @@ async def _check_entity_collision(
         )
 
 
-async def _created_entity(client: Any, entry_id: str, unique_id: str) -> dict[str, Any]:
-    """Wait for the recreated entry's entity with ``unique_id``."""
-    async with asyncio.timeout(5):
-        while True:
-            rows = [
-                row
-                for row in await _entity_registry_rows(client)
-                if row.get("config_entry_id") == entry_id
-                and row.get("unique_id") == unique_id
-            ]
-            if len(rows) > 1:
-                raise HomeAssistantError("Recreated entity mapping is ambiguous")
-            if rows:
-                return rows[0]
-            await asyncio.sleep(0.1)
-
-
 async def _recreate_flow_helper(
     client: Any, entry_id: str, snapshot: dict[str, Any], helper_type: str
 ) -> dict[str, Any]:
     """Create through the ordinary helper flow; never retry uncertain writes."""
-    from .tools.config_entry_flow import CreationFlowError, create_flow_helper
+    from .tools.config_entry_flow import CreationFlowError, recreate_flow_helper
 
     label = _flow_label(helper_type)
     snapshot = _flow_snapshot_for_restore(entry_id, snapshot, helper_type)
@@ -3150,8 +3131,8 @@ async def _recreate_flow_helper(
     try:
         # A menu-rooted creation flow is answered from the snapshot's options
         # (a template's template_type names its branch).
-        result = await create_flow_helper(
-            client, helper_type, dict(snapshot["options"]), complete_snapshot=True
+        result = await recreate_flow_helper(
+            client, helper_type, dict(snapshot["options"])
         )
     except CreationFlowError as err:
         _log_flow_helper_failure("create_entry", err)

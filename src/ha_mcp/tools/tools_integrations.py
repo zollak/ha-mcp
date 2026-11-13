@@ -137,7 +137,7 @@ def _reject_set_integration_mode_conflicts(
     entry_id: str | None,
     domain: str | None,
     enabled: bool | None,
-    config: dict[str, Any] | None,
+    config: object,
     *,
     flow_args: list[str],
 ) -> None:
@@ -1406,18 +1406,18 @@ class IntegrationTools:
             ),
         ] = None,
         config: Annotated[
-            dict[str, Any] | None,
+            dict[str, Any] | list[dict[str, Any]] | None,
             JSON_STRING_COERCION,
             Field(
                 description=(
-                    "The values for the form the flow is at: one form per "
-                    "call. Without flow_id it answers the new flow's first "
+                    "The values for the form the flow is at; a list answers "
+                    "that form and the ones after it, one object per form in "
+                    "order. Without flow_id it answers the new flow's first "
                     "form (after menu_choice, when the flow opens with a "
-                    "menu). A key the form does not declare is refused before "
-                    "anything is sent. On an existing entry (options, "
-                    "reconfigure) a field you omit keeps its current value, "
-                    "and a field set to null is cleared where the "
-                    "integration's schema allows that field to be empty."
+                    "menu). Home Assistant validates each answer. On an "
+                    "existing entry (options, reconfigure) a field you omit "
+                    "keeps its current value, and a field set to null is "
+                    "left empty."
                 ),
                 default=None,
             ),
@@ -1622,12 +1622,12 @@ class IntegrationTools:
         flow_id; a menu with menu_options. Answer with flow_id and config (a
         form) or menu_choice (a menu); flow_id alone returns the step again,
         and flow_id with abort=True ends the flow. Without flow_id a new flow
-        starts: its first form gets config, and without config the call
-        returns that first step. A form Home Assistant rejects is an error
-        with errors and error_text (Core's text), and the flow stays open to
-        correct it. A flow stays open until Home Assistant finishes
-        it or you abort it; while a setup flow is open, Home Assistant
-        refuses another one for the same device as already_in_progress.
+        starts: config answers its first form, or returns it when omitted. A
+        config list answers several forms, one object each in order (see a
+        form's later_forms). A form Home Assistant rejects is an error with
+        errors and error_text (Core's text), and the flow stays open to
+        correct it, until Home Assistant finishes it or you abort it; while a
+        setup flow is open, another for the same device is already_in_progress.
 
         WHEN NOT TO USE:
         - Helpers (template, group, utility_meter, ...): use
@@ -1961,7 +1961,7 @@ class IntegrationTools:
         but no registry entry), for a config entry the backend reports as 404,
         or for a missing config subentry.
         Calling N times gives the same response. Transient connectivity failures
-        raise their own codes (WEBSOCKET_DISCONNECTED, CONNECTION_FAILED) so
+        raise their own codes (CONNECTION_FAILED, CONNECTION_TIMEOUT) so
         retry logic can branch separately.
 
         EXAMPLES:
@@ -2200,12 +2200,10 @@ class IntegrationTools:
         try:
             # Step 1: resolve target → entry_id (typed reason on failure)
             entry_id, reason = await get_entry_id_for_flow_helper(
-                client, helper_type, target, warnings
+                client, helper_type, target
             )
             if entry_id is None:
-                raise_flow_helper_lookup_error(
-                    reason, helper_type, target, detail="; ".join(warnings) or None
-                )
+                raise_flow_helper_lookup_error(reason, helper_type, target)
 
             result: dict[str, Any] = await self._delete_resolved_flow_helper(
                 helper_type=helper_type,

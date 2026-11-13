@@ -105,8 +105,7 @@ async def test_invalid_entity_metadata_is_a_snapshot_refusal(recovery, entities)
 
 async def test_recreated_identity_read_failure_is_unavailable(recovery, monkeypatch):
     monkeypatch.setattr(
-        bm,
-        "_created_entity",
+        "ha_mcp.backup_entity_ids.created_entity",
         AsyncMock(side_effect=bm.HomeAssistantError("private upstream payload")),
     )
     with pytest.raises(bm.BackupRestoreError) as caught:
@@ -128,7 +127,9 @@ async def test_applied_options_refusal_preserves_safe_details(monkeypatch):
         fields=("availability",),
     )
     monkeypatch.setattr(
-        config_entry_flow, "update_config_entry_options", AsyncMock(side_effect=failure)
+        config_entry_flow,
+        "restore_config_entry_options",
+        AsyncMock(side_effect=failure),
     )
     with pytest.raises(bm.BackupRestoreError) as caught:
         await bm._restore_flow_helper(object(), "old-entry", snapshot, "template")

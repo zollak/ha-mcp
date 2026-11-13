@@ -132,14 +132,14 @@ def _unit_test_env(tmp_path_factory, monkeypatch):
         monkeypatch.delenv(name)
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
-    from ha_mcp.config import _reset_global_settings
+    from ha_mcp.config import reset_global_settings
     from ha_mcp.utils.data_paths import get_data_dir
 
     get_data_dir.cache_clear()
-    _reset_global_settings()
+    reset_global_settings()
     yield
     get_data_dir.cache_clear()
-    _reset_global_settings()
+    reset_global_settings()
 
 
 def _uses_js_harness(module: object) -> bool:
@@ -352,6 +352,17 @@ def mock_client():
         client._admin_route_refused = False
         client._admin_route_lock = asyncio.Lock()
         return client
+
+
+@pytest.fixture
+def no_flow_outline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No component describes a flow's declared steps, for a test whose client
+    is a test double: a form then says only what its own step reports."""
+    from ha_mcp.tools.config_helpers import describe
+
+    monkeypatch.setattr(describe, "flow_outline", AsyncMock(return_value=None))
+    # The component is there; it has no declaration for the test's flow.
+    monkeypatch.setattr(describe, "component_serves", AsyncMock(return_value=True))
 
 
 @pytest.fixture(autouse=True)
