@@ -31,6 +31,7 @@ from custom_components.ha_mcp_tools.websocket_api.constants import (
     SCHEMA_VERSION,
     WS_INFO,
     WS_OVERVIEW,
+    WS_REGISTRY_FIELDS,
 )
 from ha_mcp.__main__ import OAuthProxyClient
 from ha_mcp._vendor.fastmcp.server.auth import AccessToken
@@ -48,7 +49,6 @@ from ha_mcp.tools.component_api import (
     ComponentCaps,
     ComponentDiscoveryError,
     ask_component,
-    component_probe_auth_failed,
     component_probe_auth_kind,
     component_supports,
     get_component_caps,
@@ -57,6 +57,7 @@ from ha_mcp.tools.component_api import (
 
 from ._client_spies import sent_commands
 from ._command_faults import dropped_on, pooled_socket, received
+from ._component_frames import older_component
 
 # ``get_component_caps``: an inconclusive probe holds for 30 seconds, a
 # component found absent for five minutes.
@@ -316,6 +317,24 @@ async def test_a_component_still_starting_after_a_restart_is_found_within_30_sec
     assert isinstance(await get_component_caps(component_core_client), ComponentCaps)
 
 
+async def test_a_command_the_component_does_not_advertise_is_not_sent(
+    hass: HomeAssistant,
+    component_core_client: HomeAssistantClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A component from before ``registry_fields`` is installed: the question
+    is answered with None and the component is sent nothing."""
+    older_component(monkeypatch, "registry_fields")
+
+    with received(hass, WS_REGISTRY_FIELDS) as seen:
+        reply = await ask_component(
+            component_core_client, "registry_fields", registry="label"
+        )
+
+    assert reply is None
+    assert not seen[WS_REGISTRY_FIELDS]
+
+
 async def test_a_command_refused_while_starting_leaves_the_short_window(
     hass: HomeAssistant,
     component_core_client: HomeAssistantClient,
@@ -418,7 +437,7 @@ async def test_a_non_admins_refused_probe_leaves_the_admins_caps(
 
     with _signed_in(hass_access_token):
         assert await get_component_caps(oauth_proxy, strict=True) is admin_caps
-        assert not component_probe_auth_failed(oauth_proxy)
+        assert component_probe_auth_kind(oauth_proxy) is None
 
 
 @asynccontextmanager
@@ -481,7 +500,7 @@ async def test_failed_discovery_refuses_strict_callers_for_30_seconds(
             await get_component_caps(client, strict=True)
         # A failure read back from the cache carries only its text.
         assert cached.value.__cause__ is None
-        assert not component_probe_auth_failed(client)
+        assert component_probe_auth_kind(client) is None
 
     clock[0] += FAILURE_WINDOW_S - 1
     assert await get_component_caps(client) is first_read
@@ -516,14 +535,13 @@ async def test_a_refused_probe_is_a_permission_refusal_until_one_succeeds(
     """A fire tool stops before sending with a token Core refused; the mark
     goes once the user may use the component."""
     assert await get_component_caps(read_only_client) is None
-    assert component_probe_auth_failed(read_only_client)
     assert component_probe_auth_kind(read_only_client) == "permission"
 
     await hass.auth.async_update_user(hass_read_only_user, group_ids=[GROUP_ID_ADMIN])
     clock[0] += FAILURE_WINDOW_S + 1
 
     assert await get_component_caps(read_only_client) is not None
-    assert not component_probe_auth_failed(read_only_client)
+    assert component_probe_auth_kind(read_only_client) is None
 
 
 # Core closes a socket whose token it refused; the client's close reply then
