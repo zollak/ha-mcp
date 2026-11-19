@@ -5,7 +5,7 @@ Thank you for your interest in contributing!
 ## 🚀 Quick Start
 
 1. **Fork and clone** the repository
-2. **Install**: `uv sync --group dev`
+2. **Install**: `uv sync --group dev`. Two of Home Assistant's integration requirements build from source, so this needs a C++ compiler (`g++` on Debian and Ubuntu, the Xcode command-line tools on macOS).
 3. **Install hooks**: `uv run lefthook install`
 4. **Test**: `uv run pytest tests/src/e2e/ -n2 --dist loadscope -v` (requires Docker)
 5. **Make changes** and commit
@@ -37,7 +37,7 @@ uv run mypy tests/src/unit/ tests/addon/  # Type check the unit and app tests
 uv run ast-grep scan               # AST lint (error handling patterns)
 ```
 
-On every commit, hooks run `ruff check --fix` (lint), `ast-grep scan` (AST lint), `mypy` (type check), and unit tests in parallel via [lefthook](https://github.com/evilmartians/lefthook). When issue-intake files change, they also run the issue-intake tests; when settings UI, consent form or site files change, they run the JSDOM-based UI tests. On pull requests the **Fast Checks** CI job re-runs the lint, AST lint and type checks, plus `ruff format --check` on changed Python files, the `uv.lock` sync check, the HA-core constraint-alignment check, the docs-size check, the check that no test is exempted from the real-Core checks, the check that no public name is used only by the tests, and HACS and Hassfest validation. Unit tests run in the separate **Unit Tests** job.
+On every commit, hooks run `ruff check --fix` (lint), `ast-grep scan` (AST lint), `mypy` (type check), and unit tests in parallel via [lefthook](https://github.com/evilmartians/lefthook). When issue-intake files change, they also run the issue-intake tests; when settings UI, consent form or site files change, they run the JSDOM-based UI tests. On pull requests the **Fast Checks** CI job re-runs the lint, AST lint and type checks, plus `ruff format --check` on changed Python files, the `uv.lock` sync check, the HA-core constraint-alignment check, the docs-size check, the check that no test is exempted from the real-Core checks, the check that no public name is used only by the tests, the check that no test reaches a private name through a string, and HACS and Hassfest validation. Unit tests run in the separate **Unit Tests** job.
 
 ## 🔄 Migrating from pre-commit to lefthook
 
