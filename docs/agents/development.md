@@ -44,7 +44,10 @@ worktree references.
 E2E tests live in `tests/src/e2e/` (not `tests/e2e/`), use testcontainers,
 and require a running Docker daemon. Launch them from `tests/` so pytest
 loads the correct `conftest.py`. Unit tests in `tests/src/unit/` do not use
-Docker.
+Docker. Each E2E session first has the pinned Core write its recorder
+database (`tests/src/recorder_seed.py`), so start the suite where Core runs
+(Linux, macOS or WSL) on a Python whose SQLite is 3.40.1 or newer; uv's
+managed Python has one.
 
 For a fork branch, dispatch `gh workflow run pr.yml --repo OWNER/FORK --ref BRANCH`;
 for targeted HAOS tests, use `haos-e2e-tests.yml` instead with
@@ -119,12 +122,17 @@ uv run ruff check src/ tests/ --fix
 uv run mypy src/
 uv run mypy tests/src/unit/ tests/addon/
 uv run ast-grep scan
+uv run python scripts/error_wording.py
 ```
 
 The unit and app test trees carry extra checks that keep a test on real Home
 Assistant Core: twelve ast-grep rules, ruff's `SLF001` (their own `ruff.toml`)
 and the mypy run above. [`tests/AGENTS.md`](../../tests/AGENTS.md#unit-tests-run-on-real-home-assistant-core)
 owns these rules; every grandfather list is empty.
+
+`scripts/error_wording.py` enforces the
+[native contracts](native-core-contracts.md#decide-on-the-code-not-the-wording)
+rule on deciding by an error's wording.
 
 C901 complexity is capped at 10 repository-wide with no per-file exemptions;
 issue #925 removed the grandfathered list, so extract helpers instead of
