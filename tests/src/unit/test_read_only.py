@@ -762,9 +762,9 @@ _EXEMPT_GATED_OR_READ_ARGS = {
         *("domain", "entity_id"),
         # ...edits view selector (read) / delete target (blocked),
         "backup_name",
-        # ...edits delete filter (blocked), list pagination (read) and the
-        # snapshot configure payload (blocked).
-        *("older_than_days", "limit", "update_backup_settings"),
+        # ...edits delete filter (blocked), list pagination (read), and the
+        # snapshot configure and settings import payloads (both blocked).
+        *("older_than_days", "limit", "update_backup_settings", "settings_file"),
     },
     "ha_manage_app": {
         # Read-path selectors/modifiers of the allowed GET proxy.
@@ -845,16 +845,12 @@ _EXEMPT_GATED_OR_READ_ARGS = {
         "confirm",
     },
     "ha_manage_updates": {
-        # Targets/scope for the write actions (install/skip/clear_skipped,
-        # ignore_repair/unignore_repair), all blocked by the inspected
-        # ``action`` dispatch before use.
-        "entity_ids",
-        "categories",
-        "backup",
-        "repairs",
-        # Read-path modifiers of the allowed list/get actions.
-        "include_skipped",
-        "include_release_notes",
+        # Targets and payloads of the write actions (install, skip, set_channel,
+        # the repair actions): the inspected ``action`` blocks them first...
+        *("entity_ids", "categories", "backup", "version", "channel"),
+        *("repairs", "flow_id", "config", "menu_choice", "abort"),
+        # ...and read-path modifiers of the allowed list/get actions.
+        *("include_skipped", "include_release_notes"),
     },
     "ha_manage_security_policy": {
         # Both carry the write payload for action='set', which the
